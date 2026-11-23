@@ -1,0 +1,16 @@
+# 打包产物
+doubao.fpk
+
+# 第三方发布物：体积大、不随源码入库，用 scripts/fetch-deps.sh 按版本下载
+app/runtime/
+app/pylib/
+app/server/ttyd
+app/skills/fnos-cli/bin/
+
+# 打补丁前的备份
+*.orig
+*.orig*
+
+# 本机杂项
+.DS_Store
+node_modules/

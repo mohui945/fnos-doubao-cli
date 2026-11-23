@@ -1,0 +1,17 @@
+appname                    = doubao
+version                    = 2.37.14
+display_name               = 逗包 CLI
+desc                       = <p>豆包 CLI 的飞牛 fnOS 原生版：内置豆包官方 Linux x86_64 运行时，不依赖 Docker，也不需要额外安装 Node.js/Python。</p><p>桌面入口打开即是豆包终端（Web 版 TUI），可直接扫码登录、用自然语言处理 NAS 上的文件与任务；同时在系统 PATH 中提供 <b>doubao</b> 命令，SSH 登录后可直接使用 <b>doubao -p "……"</b> 等批处理用法。</p><p>内置「管理」分页：一键切换 <b>ROOT / 普通用户</b> 运行身份、切换工作目录、检查并一键升级上游豆包 CLI、一键重启终端。</p>
+platform                   = x86
+source                     = thirdparty
+developer                  = 豆包
+developer_url              = https://www.doubao.com/work/docs/zh-cn/doubao-cli
+maintainer                 = 豆包
+maintainer_url             = https://www.doubao.com/work/docs/zh-cn/doubao-cli
+distributor                = 老米
+changelog                  = v2.37.14：应用更名「逗包 CLI」，开发者 豆包、发布者 老米；沿用 v2.37.13 的三列等宽等高管理页排版与事件驱动技能分发。
+desktop_uidir              = ui
+desktop_applaunchname      = doubao.Application
+ctl_stop                   = true
+checkport                  = false
+os_min_version             = 1.0.0
