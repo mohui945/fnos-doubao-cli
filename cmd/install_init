@@ -1,0 +1,10 @@
+#!/bin/bash
+# 安装前检查：豆包 CLI 官方只提供 linux-x86_64 运行时。
+
+arch=$(uname -m)
+if [ "${arch}" != "x86_64" ]; then
+    echo "豆包 CLI 目前仅提供 linux-x86_64 运行时，当前设备架构为 ${arch}，无法安装。" > "${TRIM_TEMP_LOGFILE}"
+    exit 1
+fi
+
+exit 0
