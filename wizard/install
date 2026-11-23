@@ -1,0 +1,10 @@
+[
+    {
+        "stepTitle": "安装",
+        "items": [
+            { "type": "tips", "helpText": "安装后桌面会出现「逗包 CLI」图标，打开即是豆包终端，首次使用请按提示扫码登录。" },
+            { "type": "tips", "helpText": "同时在系统 PATH 中提供 doubao 命令，SSH 登录后可直接运行 doubao --help 或 doubao -p \"你的任务\"。" },
+            { "type": "tips", "helpText": "应用仅提供 linux-x86_64 运行时，ARM 设备暂不支持。" }
+        ]
+    }
+]
