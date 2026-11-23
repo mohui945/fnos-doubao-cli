@@ -1,0 +1,84 @@
+#!/bin/bash
+# 桌面 Web 终端里的会话入口：
+#   1. 按「管理页设置」的运行身份决定是否降权（ROOT / 普通用户）；
+#   2. 未登录先扫码；
+#   3. 进入豆包 TUI，退出后落到普通 shell。
+
+. "${TRIM_APPDEST}/bin/runtime-path.sh"
+
+RUNTIME_DIR=$(doubao_runtime_dir)
+MODE=$(doubao_run_mode)
+WORKSPACE="${DOUBAO_WORKSPACE:-/vol1}"
+RUN_USER_FILE="${TRIM_PKGVAR}/run-user"
+
+# 工作目录失效时回退，避免 cd 失败后落在奇怪的位置
+if [ ! -d "${WORKSPACE}" ]; then
+    WORKSPACE="/vol1"
+    [ -d "${WORKSPACE}" ] || WORKSPACE="/"
+fi
+
+# 以普通用户身份运行终端：避免豆包在 NAS 卷上创建 root 属主文件，
+# 登录态也落在该用户自己的 HOME 中，与 SSH 侧一致。
+if [ "${MODE}" = "user" ] && [ "$(id -u)" = "0" ]; then
+    . "${TRIM_APPDEST}/bin/resolve-user.sh"
+    RUN_USER=$(head -n 1 "${RUN_USER_FILE}" 2>/dev/null | tr -d '[:space:]')
+    if ! is_human_user "${RUN_USER}"; then
+        RUN_USER=$(pick_user)
+    fi
+    if [ "${RUN_USER}" != "root" ] && is_human_user "${RUN_USER}"; then
+        # 优先使用面板指定的持久 CLI 目录，保证与后台服务任务共用同一份登录态
+        RUN_HOME="${DOUBAO_CLI_HOME:-$(getent passwd "${RUN_USER}" | cut -d: -f6)}"
+
+        # ttyd 以 root 创建 PTY，pts 属主是 root:tty，直接降权后豆包 TUI
+        # 打开终端设备会 Permission denied；先把当前 PTY 交给运行用户。
+        TTY_DEV=$(readlink -f /proc/self/fd/0 2>/dev/null)
+        if [ -n "${TTY_DEV}" ] && [ -c "${TTY_DEV}" ]; then
+            chown "${RUN_USER}" "${TTY_DEV}" 2>/dev/null
+        fi
+
+        if command -v runuser >/dev/null 2>&1; then
+            exec runuser -u "${RUN_USER}" -- env \
+                HOME="${RUN_HOME}" \
+                DOUBAO_CLI_HOME="${RUN_HOME}" \
+                USER="${RUN_USER}" \
+                LOGNAME="${RUN_USER}" \
+                TERM="${TERM:-xterm-256color}" \
+                TRIM_APPDEST="${TRIM_APPDEST}" \
+                TRIM_PKGVAR="${TRIM_PKGVAR}" \
+                DOUBAO_WORKSPACE="${WORKSPACE}" \
+                "${TRIM_APPDEST}/bin/term" "$@"
+        fi
+
+        exec su - "${RUN_USER}" -c "TRIM_APPDEST='${TRIM_APPDEST}' TRIM_PKGVAR='${TRIM_PKGVAR}' DOUBAO_WORKSPACE='${WORKSPACE}' exec '${TRIM_APPDEST}/bin/term'"
+    fi
+fi
+
+export PATH="${RUNTIME_DIR}:${TRIM_APPDEST}/bin:${PATH}"
+export TERM="${TERM:-xterm-256color}"
+
+cd "${WORKSPACE}" 2>/dev/null || cd /
+
+if [ "${MODE}" = "root" ]; then
+    printf '\033[1;36m豆包 CLI\033[0m \033[2m· 当前目录 %s（\033[31mROOT\033[2m）\033[0m\n' "$(pwd)"
+else
+    printf '\033[1;36m豆包 CLI\033[0m \033[2m· 当前目录 %s（用户 %s）\033[0m\n' "$(pwd)" "$(id -un)"
+fi
+printf '\033[2m输入 /help 查看交互命令；退出豆包后可使用普通 shell；重新启动请输入 doubao。\033[0m\n\n'
+
+if [ ! -x "${RUNTIME_DIR}/doubao" ]; then
+    printf '\033[31m运行时缺失：%s/doubao\033[0m\n' "${RUNTIME_DIR}"
+    exec bash -l
+fi
+
+# 未登录时，豆包 CLI 会直接退出；这里先走扫码登录
+if "${RUNTIME_DIR}/doubao" auth status 2>&1 | grep -q "login_required"; then
+    "${TRIM_APPDEST}/bin/login"
+fi
+
+"${RUNTIME_DIR}/doubao" "$@"
+code=$?
+if [ "${code}" -ne 0 ]; then
+    printf '\n\033[33m豆包 CLI 退出，返回码 %s。\033[0m\n' "${code}"
+fi
+
+exec bash -l
