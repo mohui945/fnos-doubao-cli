@@ -1,0 +1,50 @@
+#!/bin/bash
+# 卸载前：停止 Web 终端并移除命令入口。用户登录态与工作文件保留。
+
+PID_FILE="${TRIM_PKGVAR}/doubao.pid"
+
+if [ -r "${PID_FILE}" ]; then
+    pid=$(head -n 1 "${PID_FILE}" | tr -d '[:space:]')
+    if [ -n "${pid}" ] && kill -0 "${pid}" 2>/dev/null; then
+        kill -TERM "${pid}" 2>/dev/null
+        i=0
+        while kill -0 "${pid}" 2>/dev/null && [ $i -lt 10 ]; do
+            sleep 1
+            i=$((i + 1))
+        done
+        kill -0 "${pid}" 2>/dev/null && kill -KILL "${pid}" 2>/dev/null
+    fi
+    rm -f "${PID_FILE}"
+fi
+
+rm -f "${TRIM_APPDEST}/doubao.sock" 2>/dev/null
+rm -f "${TRIM_PKGVAR}/ttyd.sock" 2>/dev/null
+pkill -f "${TRIM_PKGVAR}/ttyd.sock" 2>/dev/null
+
+# 停掉 --service-start 起的后台守护，避免卸载后留孤儿进程
+SVC_BIN="${TRIM_PKGVAR}/runtime/current/doubao"
+[ -x "${SVC_BIN}" ] || SVC_BIN="${TRIM_APPDEST}/runtime/doubao"
+if [ -x "${SVC_BIN}" ]; then
+    SVC_USER=$(head -n 1 "${TRIM_PKGVAR}/run-user" 2>/dev/null | tr -d '[:space:]')
+    SVC_MODE=$(head -n 1 "${TRIM_PKGVAR}/run-mode" 2>/dev/null | tr -d '[:space:]')
+    if [ "${SVC_MODE}" != "root" ] && [ -n "${SVC_USER}" ] && [ "${SVC_USER}" != "root" ] && command -v runuser >/dev/null 2>&1; then
+        SVC_HOME=$(getent passwd "${SVC_USER}" | cut -d: -f6)
+        runuser -u "${SVC_USER}" -- env HOME="${SVC_HOME}" USER="${SVC_USER}" \
+            "${SVC_BIN}" --service-stop >/dev/null 2>&1
+    else
+        "${SVC_BIN}" --service-stop >/dev/null 2>&1
+    fi
+fi
+
+# 升级下载的运行时占用数百 MB，卸载时一并清理（登录态在用户 HOME，保留）
+rm -rf "${TRIM_PKGVAR}/runtime" 2>/dev/null
+
+# 只删除本应用写入的封装脚本，避免误删同名命令
+if [ -f /usr/local/bin/doubao ] && grep -q "/var/apps/doubao/target/runtime" /usr/local/bin/doubao 2>/dev/null; then
+    rm -f /usr/local/bin/doubao
+fi
+if [ -f /usr/local/bin/doubao-login ] && grep -q "/var/apps/doubao/target" /usr/local/bin/doubao-login 2>/dev/null; then
+    rm -f /usr/local/bin/doubao-login
+fi
+
+exit 0
