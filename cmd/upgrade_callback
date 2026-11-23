@@ -1,0 +1,69 @@
+#!/bin/bash
+# 升级完成：刷新命令入口与文件权限，同步终端运行用户。
+
+LOG_FILE="${TRIM_PKGVAR}/install.log"
+mkdir -p "${TRIM_PKGVAR}" 2>/dev/null
+
+if [ ! -x "${TRIM_APPDEST}/runtime/doubao" ]; then
+    echo "豆包 CLI 运行时缺失：${TRIM_APPDEST}/runtime/doubao" > "${TRIM_TEMP_LOGFILE}"
+    exit 1
+fi
+
+chmod 755 "${TRIM_APPDEST}/runtime/doubao" 2>/dev/null
+chmod 755 "${TRIM_APPDEST}/server/ttyd" 2>/dev/null
+
+if cp -f "${TRIM_APPDEST}/bin/doubao-cli" /usr/local/bin/doubao 2>/dev/null; then
+    chmod 755 /usr/local/bin/doubao
+    echo "$(date '+%Y-%m-%d %H:%M:%S') - 升级完成，已刷新 /usr/local/bin/doubao" >> "${LOG_FILE}"
+fi
+if cp -f "${TRIM_APPDEST}/bin/doubao-login" /usr/local/bin/doubao-login 2>/dev/null; then
+    chmod 755 /usr/local/bin/doubao-login
+fi
+
+version=$("${TRIM_APPDEST}/runtime/doubao" --version 2>&1 | head -n 1)
+echo "$(date '+%Y-%m-%d %H:%M:%S') - 升级后版本：${version}" >> "${LOG_FILE}"
+
+. "${TRIM_APPDEST}/bin/resolve-user.sh"
+RUN_USER=$(resolve_run_user "${TRIM_USERNAME:-}")
+printf '%s' "${RUN_USER}" > "${TRIM_PKGVAR}/run-user"
+chmod 644 "${TRIM_PKGVAR}/run-user" 2>/dev/null
+echo "$(date '+%Y-%m-%d %H:%M:%S') - 终端运行用户：${RUN_USER}" >> "${LOG_FILE}"
+
+# 同步内置技能 fnos-cli 到 agent 的用户技能目录，并把预置二进制放进缓存
+SKILL_SRC="${TRIM_APPDEST}/skills/fnos-cli"
+if [ -f "${SKILL_SRC}/SKILL.md" ]; then
+    for H in "${TRIM_PKGVAR}"/home/*; do
+        [ -d "${H}" ] || continue
+        mkdir -p "${H}/.cache/fnos-cli/0.6.2/linux-x64" 2>/dev/null
+        if [ -x "${SKILL_SRC}/bin/fnos-cli" ]; then
+            cp -f "${SKILL_SRC}/bin/fnos-cli" "${H}/.cache/fnos-cli/0.6.2/linux-x64/fnos-cli" 2>/dev/null
+            chmod 755 "${H}/.cache/fnos-cli/0.6.2/linux-x64/fnos-cli" 2>/dev/null
+        fi
+        for WS in "${H}"/.local/share/doubao_cli/agent_mode/*/workspace; do
+            [ -d "${WS}" ] || continue
+            mkdir -p "${WS}/.user_skills" 2>/dev/null
+            rm -rf "${WS}/.user_skills/fnos-cli"
+            cp -r "${SKILL_SRC}" "${WS}/.user_skills/fnos-cli" 2>/dev/null
+            rm -rf "${WS}/.user_skills/fnos-cli/bin"
+            printf '%s' 0.6.2 > "${WS}/.user_skills/fnos-cli/.version"
+            chmod 755 "${WS}/.user_skills/fnos-cli/scripts/fnos-cli" 2>/dev/null
+            echo "$(date '+%Y-%m-%d %H:%M:%S') - 已同步技能 fnos-cli 到 ${WS}" >> "${LOG_FILE}"
+        done
+    done
+fi
+
+# 豆包 CLI 的登录态固定放在持久化的应用数据目录（与面板统一），并预建 root 身份目录
+mkdir -p "${TRIM_PKGVAR}/home/root" 2>/dev/null
+chmod 700 "${TRIM_PKGVAR}/home/root" 2>/dev/null
+[ -n "${TRIM_USERNAME:-}" ] && mkdir -p "${TRIM_PKGVAR}/home/${TRIM_USERNAME}" 2>/dev/null
+
+# 清理升级残留：pid 对应进程已不在时，删掉 pid 与 socket，避免「已在运行」假阳性挡住启动
+PID_FILE="${TRIM_PKGVAR}/doubao.pid"
+SOCK_PATH="${TRIM_APPDEST}/${GATEWAY_SOCKET:-doubao.sock}"
+PID_VALUE=$(head -n 1 "${PID_FILE}" 2>/dev/null | tr -d '[:space:]')
+if [ -z "${PID_VALUE}" ] || ! kill -0 "${PID_VALUE}" 2>/dev/null; then
+    rm -f "${PID_FILE}" "${SOCK_PATH}"
+    echo "$(date '+%Y-%m-%d %H:%M:%S') - 已清理残留 pid/socket" >> "${LOG_FILE}"
+fi
+
+exit 0
