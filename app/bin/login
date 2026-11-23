@@ -1,0 +1,60 @@
+#!/bin/bash
+# 扫码登录：豆包 CLI 只把二维码输出为 PNG 文件，Web 终端无法直接看图，
+# 这里把图片转成终端里的黑白二维码，扫码体验与本地终端一致。
+
+. "${TRIM_APPDEST}/bin/runtime-path.sh"
+
+RUNTIME_DIR=$(doubao_runtime_dir)
+QR_RENDER="${TRIM_APPDEST}/bin/qr2ansi.py"
+OUT_FILE=$(mktemp /tmp/doubao-login.XXXXXX)
+
+cleanup() {
+    rm -f "${OUT_FILE}"
+}
+trap cleanup EXIT INT TERM
+
+"${RUNTIME_DIR}/doubao" login --qr=png > "${OUT_FILE}" 2>&1 &
+LOGIN_PID=$!
+
+QR_PATH=""
+i=0
+while [ $i -lt 60 ]; do
+    QR_PATH=$(sed -n 's/^QR_IMAGE=//p' "${OUT_FILE}" 2>/dev/null | head -n 1)
+    [ -n "${QR_PATH}" ] && [ -f "${QR_PATH}" ] && break
+    kill -0 "${LOGIN_PID}" 2>/dev/null || break
+    sleep 0.25
+    i=$((i + 1))
+done
+
+if [ -n "${QR_PATH}" ] && [ -f "${QR_PATH}" ]; then
+    clear 2>/dev/null
+    printf '\033[1;36m豆包 CLI 登录\033[0m\n\n'
+    # 系统 Python 未装 Pillow 时 import PIL 会失败，这里固定从应用自带目录补齐依赖
+    PY_LIB="${TRIM_APPDEST}/pylib"
+    if [ -d "${TRIM_PKGVAR}/pylib" ]; then
+        PY_LIB="${PY_LIB}:${TRIM_PKGVAR}/pylib"
+    fi
+    if command -v python3 >/dev/null 2>&1 && [ -f "${QR_RENDER}" ] \
+        && PYTHONPATH="${PY_LIB}${PYTHONPATH:+:${PYTHONPATH}}" python3 "${QR_RENDER}" "${QR_PATH}"; then
+        :  # 渲染成功
+    else
+        echo "二维码渲染失败（缺少 python3 或 Pillow），图片位于：${QR_PATH}"
+        echo "可在文件管理中下载该图片后用豆包 App 从相册识别。"
+    fi
+    printf '\n\033[33m请用豆包 App 扫码，并在手机上确认登录。\033[0m\n'
+    printf '\033[2m（二维码失效时按 Ctrl+C 退出，重新打开应用即可刷新）\033[0m\n\n'
+else
+    echo "未获取到登录二维码，原始输出如下："
+    cat "${OUT_FILE}"
+fi
+
+wait "${LOGIN_PID}"
+code=$?
+
+if [ ${code} -eq 0 ]; then
+    printf '\n\033[32m登录成功。\033[0m\n'
+else
+    printf '\n\033[31m登录未完成（返回码 %s）。\033[0m\n' "${code}"
+fi
+
+exit ${code}

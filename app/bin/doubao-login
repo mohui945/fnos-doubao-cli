@@ -1,0 +1,12 @@
+#!/bin/sh
+# SSH 侧扫码登录入口（由飞牛应用 doubao 安装到 /usr/local/bin/doubao-login）
+# 豆包 CLI 只输出二维码 PNG 路径，这里在终端里渲染成可扫描的黑白二维码。
+
+APP_DEST="/var/apps/doubao/target"
+
+if [ ! -x "${APP_DEST}/bin/login" ]; then
+    echo "豆包 CLI 未安装或已损坏：${APP_DEST}/bin/login" >&2
+    exit 127
+fi
+
+TRIM_APPDEST="${APP_DEST}" TRIM_PKGVAR="/var/apps/doubao/var" exec "${APP_DEST}/bin/login" "$@"

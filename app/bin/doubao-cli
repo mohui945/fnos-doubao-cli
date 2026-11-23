@@ -1,0 +1,73 @@
+#!/bin/bash
+# 豆包 CLI 命令入口（由飞牛应用 doubao 安装到 /usr/local/bin/doubao）
+# 直接调用官方运行时，支持 `doubao -p "..."`、`doubao login` 等全部用法。
+# 优先使用应用内升级过的运行时，没有则用安装包里内置的那份。
+#
+# 权限档位由管理面板决定：这里强制注入 --permission-mode，并剔除调用方传的
+# 同名参数/绕过开关，避免手机端、网页端、桌面客户端的选择覆盖面板设置。
+
+APP_ROOT="/var/apps/doubao"
+VAR_DIR="${TRIM_PKGVAR:-${APP_ROOT}/var}"
+RUNTIME_DIR="${APP_ROOT}/var/runtime/current"
+[ -x "${RUNTIME_DIR}/doubao" ] || RUNTIME_DIR="${APP_ROOT}/target/runtime"
+
+if [ ! -x "${RUNTIME_DIR}/doubao" ]; then
+    echo "豆包 CLI 运行时缺失：${RUNTIME_DIR}/doubao" >&2
+    echo "请在飞牛应用中心启动或重装「豆包 CLI」应用。" >&2
+    exit 127
+fi
+
+PERM=$(head -n 1 "${VAR_DIR}/permission-mode" 2>/dev/null | tr -d '[:space:]')
+case "$PERM" in
+    ask_always|ask_risky|always_allow) ;;
+    *) PERM=ask_risky ;;
+esac
+
+# 账号类 / 查询类命令不接受权限选项，原样透传
+passthrough=0
+for a in "$@"; do
+    case "$a" in
+        login|logout|auth|model|--list|--export|-h|--help|-v|--version) passthrough=1; break ;;
+        -*) ;;
+        *) break ;;
+    esac
+done
+
+if [ "$passthrough" = "1" ]; then
+    exec "${RUNTIME_DIR}/doubao" "$@"
+fi
+
+# 服务任务开关（--service-start/status/stop）与权限参数互斥：运行时只接受它单独出现，
+# 这里只剔除调用方传入的权限参数，不注入面板档位；服务任务的身份与意图由面板决定。
+service_cmd=0
+for a in "$@"; do
+    case "$a" in
+        --service-start|--service-status|--service-stop) service_cmd=1 ;;
+    esac
+done
+
+# 剔除调用方传入的权限参数
+kept=()
+skip_next=0
+for a in "$@"; do
+    if [ "$skip_next" = "1" ]; then
+        skip_next=0
+        continue
+    fi
+    case "$a" in
+        --permission-mode) skip_next=1; continue ;;
+        --permission-mode=*) continue ;;
+        --dangerously-bypass-approvals-and-sandbox) continue ;;
+    esac
+    kept+=("$a")
+done
+
+# 运行时的会话/服务端也会读这个环境变量（配合面板侧的强制补丁），
+# 保证 TUI、-p、后台服务任务、手机端会话用的是同一个档位。
+export DOUBAO_PERMISSION_MODE="$PERM"
+
+if [ "$service_cmd" = "1" ]; then
+    exec "${RUNTIME_DIR}/doubao" "${kept[@]}"
+fi
+
+exec "${RUNTIME_DIR}/doubao" --permission-mode "$PERM" "${kept[@]}"
