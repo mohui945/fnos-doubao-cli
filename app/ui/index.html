@@ -1,0 +1,1167 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>逗包 CLI</title>
+<link rel="icon" href="__BASE__/icon.png">
+<style>
+  :root {
+    --bg: #0d0f14;
+    --panel: #16191f;
+    --panel-2: #1c2029;
+    --line: #272c37;
+    --text: #e9eaee;
+    --sub: #8b92a3;
+    --accent: #5b8cff;
+    --accent-dim: #2a3550;
+    --ok: #4ed27f;
+    --warn: #f2c94c;
+    --err: #ff6b6b;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    display: flex;
+    flex-direction: column;
+    background: var(--bg);
+    color: var(--text);
+    font: 13px/1.6 system-ui, -apple-system, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+    -webkit-font-smoothing: antialiased;
+    overflow: hidden;
+  }
+
+  /* ---------- 顶栏 ---------- */
+  .topbar {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    height: 52px;
+    padding: 0 16px;
+    background: var(--panel);
+    border-bottom: 1px solid var(--line);
+    flex: none;
+  }
+  .brand { display: flex; align-items: center; gap: 9px; font-size: 14px; font-weight: 600; letter-spacing: .2px; }
+  .brand img { width: 24px; height: 24px; border-radius: 7px; display: block; }
+  .tabs { display: flex; gap: 2px; background: #10131a; border: 1px solid var(--line); border-radius: 9px; padding: 3px; }
+  .tab {
+    appearance: none; border: 0; background: transparent; color: var(--sub);
+    font: inherit; font-size: 12.5px; padding: 5px 16px; border-radius: 7px; cursor: pointer;
+    transition: background .15s, color .15s;
+  }
+  .tab:hover { color: var(--text); }
+  .tab.active { background: var(--accent-dim); color: #cfdcff; }
+  .state { margin-left: auto; display: flex; align-items: center; gap: 7px; color: var(--sub); font-size: 12px; }
+  .dot { width: 7px; height: 7px; border-radius: 50%; background: #555c6b; box-shadow: 0 0 0 3px rgba(255,255,255,.03); }
+  .dot.ok { background: var(--ok); box-shadow: 0 0 0 3px rgba(78,210,127,.15); }
+  .dot.bad { background: var(--err); box-shadow: 0 0 0 3px rgba(255,107,107,.15); }
+
+  /* ---------- 主体 ---------- */
+  main { flex: 1; min-height: 0; display: flex; }
+  .pane { flex: 1; min-width: 0; min-height: 0; display: none; }
+  .pane.active { display: flex; }
+  #pane-term iframe { flex: 1; width: 100%; height: 100%; border: 0; background: #101216; display: block; }
+
+  #pane-manage { overflow: auto; padding: 18px; }
+  .wrap { width: 100%; max-width: 1080px; margin: 0 auto; }
+  /* 统一三列栅格：卡片等宽等高，占不满的格子留空 */
+  .grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; align-items: stretch; }
+  @media (max-width: 980px) { .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  @media (max-width: 640px) { .grid { grid-template-columns: minmax(0, 1fr); } }
+
+  .card {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    min-height: 330px;
+  }
+  .card > .card-head { flex: 0 0 auto; }
+  /* 卡片内容区的留白：让内容不满的卡片撑满同一高度，底部按钮对齐 */
+  .card .grow { flex: 1 1 auto; }
+  .card.wide { grid-column: 1 / -1; }
+  .card-head { display: flex; align-items: center; gap: 10px; margin-bottom: 4px; }
+  .card-head h3 { margin: 0; font-size: 13.5px; font-weight: 600; }
+  .card-head .spacer { flex: 1; }
+  .hint { margin: 6px 0 14px; color: var(--sub); font-size: 12px; line-height: 1.65; }
+
+  .kv { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px 20px; margin: 12px 0 0; }
+  .kv > div { min-width: 0; }
+  .kv dt { color: var(--sub); font-size: 11.5px; margin-bottom: 2px; }
+  .kv dd { margin: 0; font-size: 13px; font-variant-numeric: tabular-nums; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  /* 按钮 */
+  button { font: inherit; cursor: pointer; }
+  .btn {
+    appearance: none; border-radius: 8px; border: 1px solid var(--line);
+    background: var(--panel-2); color: var(--text);
+    font-size: 12.5px; padding: 7px 14px; transition: background .15s, border-color .15s, opacity .15s;
+    white-space: nowrap;
+  }
+  .btn:hover { background: #232833; }
+  .btn:disabled { opacity: .45; cursor: not-allowed; }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 500; }
+  .btn.primary:hover { background: #6d99ff; }
+  .btn.tiny { padding: 4px 10px; font-size: 12px; }
+  .btn.danger { border-color: #4a2a2f; color: #ffb3b3; }
+  .btn.danger:hover { background: #332026; }
+  .btn-row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: auto; padding-top: 14px; }
+
+  /* 分段选择 */
+  .seg { display: flex; gap: 6px; }
+  .seg button {
+    flex: 1; appearance: none; border-radius: 9px; border: 1px solid var(--line);
+    background: var(--panel-2); color: var(--sub); font-size: 12.5px; padding: 9px 10px;
+    transition: all .15s;
+  }
+  .seg button:hover { color: var(--text); border-color: #3a4150; }
+  .seg button.on { background: var(--accent-dim); border-color: #3f5b96; color: #cfdcff; }
+  .seg button .sub { display: block; font-size: 11px; color: var(--sub); margin-top: 1px; }
+  .seg button.on .sub { color: #9db4e6; }
+
+  /* 状态标签 / 开关 */
+  .tag {
+    font-size: 11px; padding: 2px 9px; border-radius: 999px; flex: none;
+    border: 1px solid var(--line); color: var(--sub); background: var(--panel-2);
+  }
+  .tag.ok { color: #7ee3a5; border-color: #2c4a38; background: rgba(78, 210, 127, .1); }
+  .tag.bad { color: #ffb3b3; border-color: #4a2a2f; background: rgba(255, 107, 107, .1); }
+  .svc-error {
+    margin: 0 0 12px; padding: 7px 10px; border-radius: 8px; font-size: 11.5px; line-height: 1.6;
+    color: #ffbcbc; background: rgba(255, 107, 107, .07); border: 1px solid #4a2a2f;
+    word-break: break-all;
+  }
+  .switch-row {
+    display: flex; align-items: center; gap: 9px; margin-top: 12px;
+    font-size: 12.5px; color: var(--text); cursor: pointer; user-select: none;
+  }
+  .switch-row input {
+    appearance: none; width: 34px; height: 19px; border-radius: 999px; flex: none;
+    background: #10131a; border: 1px solid var(--line); position: relative;
+    cursor: pointer; transition: background .15s, border-color .15s; margin: 0;
+  }
+  .switch-row input::after {
+    content: ''; position: absolute; top: 2px; left: 2px; width: 13px; height: 13px;
+    border-radius: 50%; background: #6b7280; transition: transform .15s, background .15s;
+  }
+  .switch-row input:checked { background: var(--accent-dim); border-color: #3f5b96; }
+  .switch-row input:checked::after { transform: translateX(15px); background: #cfdcff; }
+  code {
+    font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 11.5px;
+    background: #10131a; border: 1px solid var(--line); border-radius: 5px; padding: 1px 5px;
+  }
+
+  /* 输入 */
+  .path-row { display: flex; gap: 8px; }
+  input[type="text"], .mono {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  }
+  input[type="text"] {
+    flex: 1; min-width: 0; background: #10131a; color: var(--text);
+    border: 1px solid var(--line); border-radius: 8px; padding: 8px 11px; font-size: 12.5px;
+    outline: none;
+  }
+  input[type="text"]:focus { border-color: #3f5b96; box-shadow: 0 0 0 3px rgba(91,140,255,.12); }
+  textarea {
+    width: 100%; box-sizing: border-box; min-height: 132px; resize: vertical;
+    padding: 10px 12px; border-radius: 9px; border: 1px solid var(--line);
+    background: var(--panel-2); color: var(--text); font: inherit; line-height: 1.65;
+  }
+  textarea::placeholder { color: #667085; }
+  textarea:focus { outline: none; border-color: #3f5b96; box-shadow: 0 0 0 3px rgba(91,140,255,.12); }
+  .rules-meta { margin-top: 9px; font-size: 12px; color: var(--sub); word-break: break-all; }
+  .credit-row { display: flex; gap: 18px; align-items: center; margin-top: 6px; flex-wrap: wrap; }
+  .credit-num { min-width: 150px; display: flex; align-items: baseline; gap: 6px; }
+  .credit-num span { font-size: 33px; font-weight: 700; letter-spacing: -.5px; }
+  .credit-num em { font-style: normal; font-size: 12px; color: var(--sub); }
+  .credit-side { flex: 1; min-width: 240px; }
+  .credit-pc { margin-top: 12px; }
+  .credit-pc summary { cursor: pointer; color: var(--sub); font-size: 13px; padding: 4px 0; }
+  .credit-pc textarea { width: 100%; min-height: 74px; margin-top: 8px; font-family: var(--mono); font-size: 12px; }
+  .credit-expiry { margin-top: 12px; }
+  .credit-expiry table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .credit-expiry th, .credit-expiry td { text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--line); }
+  .credit-expiry th { color: var(--sub); font-weight: 500; }
+
+
+  /* 分区标题 */
+  .sec {
+    grid-column: 1 / -1; display: flex; align-items: center; gap: 10px;
+    margin: 4px 0 -2px; font-size: 12px; color: var(--sub); letter-spacing: .3px;
+  }
+  .sec::after { content: ''; flex: 1; height: 1px; background: var(--line); }
+  /* 权限档位 */
+  .perm-list { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
+  .perm {
+    display: flex; align-items: flex-start; gap: 10px; width: 100%; text-align: left;
+    background: var(--panel-2); border: 1px solid var(--line); border-radius: 10px;
+    padding: 11px 12px; color: var(--text); transition: border-color .15s, background .15s;
+  }
+  .perm:hover { border-color: #3a4150; }
+  .perm.on { border-color: #3f5b96; background: var(--accent-dim); }
+  .perm .ic { width: 18px; text-align: center; color: var(--sub); font-style: normal; font-size: 14px; }
+  .perm .t { flex: 1; font-size: 13px; line-height: 1.4; }
+  .perm .t em { display: block; font-style: normal; color: var(--sub); font-size: 11.5px; margin-top: 3px; }
+  .perm.on .t em { color: #9db4e6; }
+  .perm .ck { color: #8fb4ff; font-weight: 700; opacity: 0; font-size: 14px; }
+  .perm.on .ck { opacity: 1; }
+
+  .chips { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px; }
+  .chip {
+    appearance: none; border: 1px solid var(--line); background: transparent; color: var(--sub);
+    border-radius: 999px; font-size: 11.5px; padding: 3px 10px; transition: all .15s;
+  }
+  .chip:hover { color: var(--text); border-color: #3a4150; background: var(--panel-2); }
+
+  /* 升级 */
+  .ver-row { display: flex; align-items: center; gap: 10px; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 13px; }
+  .ver-row .v { padding: 3px 10px; border-radius: 7px; background: var(--panel-2); border: 1px solid var(--line); }
+  .ver-row .v.new { border-color: #3f5b96; color: #cfdcff; }
+  .ver-row .arrow { color: var(--sub); }
+  .progress { height: 5px; border-radius: 99px; background: #10131a; overflow: hidden; margin-top: 14px; display: none; }
+  .progress.on { display: block; }
+  .progress .bar { height: 100%; width: 0; border-radius: 99px; background: linear-gradient(90deg, #4a7bf0, #7ba4ff); transition: width .35s ease; }
+  .progress.err .bar { background: var(--err); }
+  .progress.ok .bar { background: var(--ok); }
+  .progress-text { color: var(--sub); font-size: 11.5px; margin-top: 7px; min-height: 17px; }
+  .progress-text.err { color: #ff9b9b; }
+  .progress-text.ok { color: #7ee3a5; }
+
+  /* 弹层 */
+  .modal {
+    position: fixed; inset: 0; background: rgba(6,8,12,.66); backdrop-filter: blur(2px);
+    display: none; align-items: center; justify-content: center; padding: 24px; z-index: 50;
+  }
+  .modal.on { display: flex; }
+  .sheet {
+    width: 100%; max-width: 560px; max-height: 78vh; display: flex; flex-direction: column;
+    background: var(--panel); border: 1px solid var(--line); border-radius: 14px;
+    box-shadow: 0 24px 64px rgba(0,0,0,.5); overflow: hidden;
+  }
+  .sheet-head { display: flex; align-items: center; gap: 10px; padding: 13px 16px; border-bottom: 1px solid var(--line); }
+  .sheet-head h4 { margin: 0; font-size: 13px; font-weight: 600; }
+  .sheet-body { overflow: auto; padding: 10px; }
+  .sheet-foot { display: flex; gap: 8px; justify-content: flex-end; padding: 12px 16px; border-top: 1px solid var(--line); }
+  .crumb { color: var(--sub); font-size: 11.5px; padding: 2px 6px 8px; font-family: ui-monospace, Menlo, monospace; word-break: break-all; }
+  .entry {
+    display: flex; align-items: center; gap: 9px; padding: 7px 10px; border-radius: 8px;
+    cursor: pointer; font-size: 12.5px; color: var(--text);
+  }
+  .entry:hover { background: var(--panel-2); }
+  .entry .ico { color: var(--sub); width: 14px; flex: none; text-align: center; }
+  .entry .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .empty { color: var(--sub); font-size: 12px; padding: 12px 10px; }
+
+  pre.log {
+    margin: 0; padding: 12px 14px; font-family: ui-monospace, Menlo, Consolas, monospace;
+    font-size: 11.5px; line-height: 1.6; color: #c3c8d4; white-space: pre-wrap; word-break: break-all;
+    background: #0b0d12;
+  }
+
+  .toast {
+    position: fixed; left: 50%; bottom: 26px; transform: translate(-50%, 16px);
+    background: #232833; border: 1px solid #333a48; color: var(--text);
+    padding: 9px 16px; border-radius: 10px; font-size: 12.5px;
+    opacity: 0; pointer-events: none; transition: opacity .2s, transform .2s; z-index: 80;
+    max-width: 80vw; box-shadow: 0 12px 32px rgba(0,0,0,.45);
+  }
+  .toast.on { opacity: 1; transform: translate(-50%, 0); }
+  .toast.err { border-color: #59333a; color: #ffbcbc; }
+  .toast.ok { border-color: #2c4a38; color: #b6f0cd; }
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand"><img src="__BASE__/icon-256.png" alt="豆包"><span>逗包 CLI</span></div>
+  <nav class="tabs">
+    <button class="tab active" data-tab="term">终端</button>
+    <button class="tab" data-tab="manage">管理</button>
+  </nav>
+  <div class="state"><i class="dot" id="dot"></i><span id="stateText">连接中…</span></div>
+</header>
+
+<main>
+  <section class="pane active" id="pane-term">
+    <iframe id="termFrame" title="豆包终端" allow="clipboard-read; clipboard-write"></iframe>
+  </section>
+
+  <section class="pane" id="pane-manage">
+    <div class="wrap">
+      <div class="grid">
+
+        <div class="sec">运行概览</div>
+
+        <div class="card">
+          <div class="card-head">
+            <h3>运行状态</h3>
+            <div class="spacer"></div>
+            <button class="btn tiny" id="btnRefresh">刷新</button>
+          </div>
+          <dl class="kv">
+            <div><dt>终端服务</dt><dd id="kvTerm">—</dd></div>
+            <div><dt>运行身份</dt><dd id="kvUser">—</dd></div>
+            <div><dt>权限档位</dt><dd id="kvPerm">—</dd></div>
+            <div><dt>当前版本</dt><dd id="kvVer">—</dd></div>
+            <div><dt>工作目录</dt><dd id="kvWd">—</dd></div>
+          </dl>
+        </div>
+
+        <div class="card">
+          <div class="card-head"><h3>运行身份</h3></div>
+          <p class="hint">普通用户：豆包以登录用户身份运行，卷上文件属主正确，最安全。ROOT：以超级用户运行，可读写任何系统文件，请自行评估风险。</p>
+          <div class="seg" id="modeSeg">
+            <button data-mode="user">普通用户<span class="sub" id="segUserName">—</span></button>
+            <button data-mode="root">ROOT<span class="sub">超级用户</span></button>
+          </div>
+          <div class="btn-row">
+            <button class="btn primary" id="btnApplyMode">应用并重启终端</button>
+          </div>
+        </div>
+
+        <div class="sec">权限 · 安全</div>
+
+        <div class="card wide">
+          <div class="card-head">
+            <h3>权限档位</h3>
+            <div class="spacer"></div>
+            <span class="tag" id="permTag">—</span>
+          </div>
+          <p class="hint">这里是唯一入口：手机端、网页端、桌面客户端里选的权限一律忽略，CLI 每次启动都由面板注入 <code>--permission-mode</code>，调用方自己传的同名参数会被剔除。</p>
+          <div class="perm-list" id="permList">
+            <button class="perm" data-perm="ask_always"><i class="ic">✋</i><span class="t">始终询问<em>编辑外部文件和使用互联网始终询问</em></span><b class="ck">✓</b></button>
+            <button class="perm" data-perm="ask_risky"><i class="ic">✓</i><span class="t">按需确认<em>只针对有风险的操作进行询问</em></span><b class="ck">✓</b></button>
+            <button class="perm" data-perm="always_allow"><i class="ic">!</i><span class="t">全部允许<em>不受限制地访问互联网和编辑电脑上的任何文件</em></span><b class="ck">✓</b></button>
+          </div>
+          <div class="btn-row">
+            <button class="btn primary" id="btnApplyPerm">保存并重启终端</button>
+            <span class="hint" id="permState" style="margin:0 0 0 6px">—</span>
+          </div>
+        </div>
+
+        <div class="sec">工作区</div>
+
+        <div class="card">
+          <div class="card-head"><h3>工作目录</h3></div>
+          <p class="hint">豆包默认在此目录读写文件，终端打开时的当前目录也是它。</p>
+          <div class="path-row">
+            <input type="text" id="wdInput" placeholder="/vol1" spellcheck="false">
+            <button class="btn" id="btnBrowse">浏览…</button>
+          </div>
+          <div class="chips" id="wdChips"></div>
+          <div class="btn-row">
+            <button class="btn primary" id="btnApplyWd">保存并重启终端</button>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-head">
+            <h3>规则 · 系统级指令</h3>
+            <div class="spacer"></div>
+            <span class="tag" id="rulesTag">—</span>
+          </div>
+          <p class="hint">保存后写入工作目录下的 <code>AGENTS.md</code>，优先级高于你在对话里发的任何问题；终端、<code>doubao -p</code> 与后台服务任务都会读取。留空即移除规则。</p>
+          <textarea id="rulesInput" spellcheck="false" placeholder="例如：每次回复第一行先给结论；删除或覆盖文件前必须先列出完整路径并等我确认；不确定的信息一律标注“未核实”。"></textarea>
+          <div class="rules-meta" id="rulesMeta">—</div>
+          <div class="btn-row">
+            <button class="btn primary" id="btnRulesSave">保存规则</button>
+            <button class="btn" id="btnRulesClear">清空规则</button>
+          </div>
+        </div>
+
+        <div class="sec">额度</div>
+
+        <div class="card wide">
+          <div class="card-head">
+            <h3>额度 · 签到</h3>
+            <div class="spacer"></div>
+            <span class="tag" id="creditTag">—</span>
+          </div>
+          <div class="credit-row">
+            <div class="credit-num"><span id="creditBalance">—</span><em>剩余额度</em></div>
+            <div class="credit-side">
+              <div class="hint" id="creditNote">点「刷新额度」读取当前账号的额度与到期时间。</div>
+              <div class="btn-row">
+                <button class="btn primary" id="btnCreditRefresh">刷新额度</button>
+                <button class="btn" id="btnCreditSign">签到</button>
+                <span class="hint" id="creditSignin" style="margin:0 0 0 4px"></span>
+              </div>
+              <div class="btn-row">
+                <span class="hint" id="creditSoon" style="margin:0">—</span>
+              </div>
+            </div>
+          </div>
+          <details class="credit-pc">
+            <summary>PC 端 Cookie（签到用，来自豆包桌面客户端）</summary>
+            <p class="hint">签到接口只在桌面客户端放量，必须用客户端登录态：在客户端里 <code>Network.getAllCookies</code> 或开发者工具复制 www.doubao.com 的整串 Cookie（形如 <code>a=1; b=2; …</code>），粘贴后保存即校验。</p>
+            <textarea id="pcCookie" spellcheck="false" placeholder="sessionid=…; sid_guard=…; uid_tt=…; ttwid=…"></textarea>
+            <div class="btn-row">
+              <button class="btn primary" id="btnSavePc">保存并校验</button>
+              <button class="btn" id="btnClearPc">清除</button>
+              <span class="hint" id="pcState" style="margin:0 0 0 4px">—</span>
+            </div>
+          </details>
+          <div class="credit-expiry" id="creditExpiry"></div>
+        </div>
+
+        <div class="sec">服务与维护</div>
+
+        <div class="card">
+          <div class="card-head">
+            <h3>后台服务任务</h3>
+            <div class="spacer"></div>
+            <span class="tag" id="svcTag">检测中</span>
+          </div>
+          <p class="hint">豆包 CLI 的 <code>--service-start</code> 服务任务：脱离终端常驻后台，关掉浏览器、退出终端都不影响；进程意外退出后 30 秒内自动拉起。</p>
+          <div class="svc-error" id="svcError" style="display:none"></div>
+          <dl class="kv">
+            <div><dt>进程号</dt><dd id="svcPid">—</dd></div>
+            <div><dt>运行时长</dt><dd id="svcUptime">—</dd></div>
+          </dl>
+          <label class="switch-row">
+            <input type="checkbox" id="svcKeep">
+            <span>保持后台运行（自动拉起）</span>
+          </label>
+          <div class="btn-row">
+            <button class="btn primary" id="btnSvcStart">立即启动</button>
+            <button class="btn" id="btnSvcStop">停止服务</button>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-head"><h3>上游升级</h3></div>
+          <p class="hint">从豆包官方 npm 源获取最新 Linux x86_64 运行时，校验 SHA-256 后热切换，无需重装应用。升级包约 240 MB，请确保网络畅通。</p>
+          <div class="ver-row">
+            <span class="v" id="vCur">—</span>
+            <span class="arrow">→</span>
+            <span class="v new" id="vNew">待检查</span>
+          </div>
+          <div class="progress" id="progWrap"><div class="bar" id="progBar"></div></div>
+          <div class="progress-text" id="progText"></div>
+          <div class="btn-row">
+            <button class="btn" id="btnCheck">检查更新</button>
+            <button class="btn primary" id="btnUpgrade">一键升级</button>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-head"><h3>会话控制</h3></div>
+          <p class="hint">重启会断开当前所有终端会话，正在执行的任务会中断；配置项修改后也需要重启才能生效。</p>
+          <div class="btn-row">
+            <button class="btn primary" id="btnRestart">一键重启豆包</button>
+            <button class="btn" id="btnLog">查看日志</button>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </section>
+</main>
+
+<div class="modal" id="modal">
+  <div class="sheet" id="sheet">
+    <div class="sheet-head">
+      <h4 id="sheetTitle">选择目录</h4>
+      <div class="spacer" style="flex:1"></div>
+      <button class="btn tiny" id="sheetClose">关闭</button>
+    </div>
+    <div class="sheet-body" id="sheetBody"></div>
+    <div class="sheet-foot" id="sheetFoot" style="display:none">
+      <button class="btn" id="btnPickCancel">取消</button>
+      <button class="btn primary" id="btnPickOk">使用此目录</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+(function () {
+  'use strict';
+
+  var BASE = '__BASE__';
+  if (BASE.indexOf('__') === 0) BASE = '';   // 未被服务端替换时的兜底（同源根路径）
+
+  var $ = function (id) { return document.getElementById(id); };
+  var state = {
+    status: null,
+    pendingMode: null,
+    iframeLoaded: false,
+    pollTimer: 0,
+    browsePath: '',
+    toastTimer: 0
+  };
+
+  /* ---------------- 基础请求 ---------------- */
+  function api(path, options) {
+    var opts = options || {};
+    opts.headers = opts.headers || {};
+    if (opts.body) opts.headers['Content-Type'] = 'application/json';
+    return fetch(BASE + path, opts).then(function (res) {
+      return res.json().catch(function () { return null; }).then(function (data) {
+        if (!res.ok) {
+          throw new Error((data && data.error) || ('HTTP ' + res.status));
+        }
+        if (data && data.ok === false && data.error) throw new Error(data.error);
+        return data || {};
+      });
+    });
+  }
+
+  function toast(msg, kind) {
+    var el = $('toast');
+    el.textContent = msg;
+    el.className = 'toast on' + (kind ? ' ' + kind : '');
+    clearTimeout(state.toastTimer);
+    state.toastTimer = setTimeout(function () { el.className = 'toast'; }, 3200);
+  }
+
+  function setOnline(ok, text) {
+    $('dot').className = 'dot ' + (ok ? 'ok' : 'bad');
+    $('stateText').textContent = text;
+  }
+
+  /* ---------------- 分页 ---------------- */
+  function switchTab(name) {
+    Array.prototype.forEach.call(document.querySelectorAll('.tab'), function (b) {
+      b.classList.toggle('active', b.dataset.tab === name);
+    });
+    $('pane-term').classList.toggle('active', name === 'term');
+    $('pane-manage').classList.toggle('active', name === 'manage');
+    if (name === 'term' && !state.iframeLoaded) loadTerminal();
+  }
+
+  function loadTerminal() {
+    state.iframeLoaded = true;
+    $('termFrame').src = BASE + '/term/';
+  }
+
+  function reloadTerminal() {
+    if (!state.iframeLoaded) return;
+    var frame = $('termFrame');
+    frame.src = 'about:blank';
+    setTimeout(function () { frame.src = BASE + '/term/?t=' + Date.now(); }, 120);
+  }
+
+  var PERM_LABEL = { ask_always: '始终询问', ask_risky: '按需确认', always_allow: '全部允许' };
+
+  /* ---------------- 状态渲染 ---------------- */
+  function render(s) {
+    state.status = s;
+    var running = !!s.ttydRunning;
+    setOnline(running, running ? '终端运行中' : '终端未运行');
+
+    $('kvTerm').textContent = running ? ('运行中 · PID ' + s.ttydPid) : '未运行';
+    $('kvUser').textContent = s.mode === 'root' ? 'ROOT（超级用户）' : (s.runUser || '普通用户');
+    $('kvVer').textContent = (s.activeVersion || '未知') + (s.active === 'upgraded' ? '（已升级）' : '（内置）');
+    $('kvWd').textContent = s.workdir || '—';
+    $('kvWd').title = s.workdir || '';
+
+    var perm = state.pendingPerm || s.permission || 'ask_risky';
+    $('kvPerm').textContent = PERM_LABEL[s.permission] || '—';
+    $('permTag').textContent = PERM_LABEL[s.permission] || '—';
+    $('permTag').className = 'tag' + (s.permission === 'always_allow' ? ' bad' : (s.permission === 'ask_always' ? ' ok' : ''));
+    Array.prototype.forEach.call(document.querySelectorAll('#permList .perm'), function (b) {
+      b.classList.toggle('on', b.dataset.perm === perm);
+    });
+    $('btnApplyPerm').disabled = (perm === s.permission);
+    $('permState').textContent = perm === s.permission ? '当前生效' : '未保存（点左侧保存）';
+
+    $('segUserName').textContent = s.runUser || '登录用户';
+    var mode = state.pendingMode || s.mode;
+    Array.prototype.forEach.call(document.querySelectorAll('#modeSeg button'), function (b) {
+      b.classList.toggle('on', b.dataset.mode === mode);
+    });
+    $('btnApplyMode').disabled = (mode === s.mode);
+
+    if (document.activeElement !== $('wdInput')) $('wdInput').value = s.workdir || '';
+
+    $('vCur').textContent = s.activeVersion || '未知';
+    if (s.latest) {
+      $('vNew').textContent = s.latest;
+      $('vNew').classList.toggle('new', s.latest !== s.activeVersion);
+      $('btnUpgrade').disabled = (s.latest === s.activeVersion) || upgradingRunning(s);
+      $('btnUpgrade').textContent = s.latest === s.activeVersion ? '已是最新' : '一键升级';
+    }
+    renderProgress(s.upgrade);
+    renderService(s.service);
+  }
+
+  function renderService(svc) {
+    svc = svc || {};
+    var tag = $('svcTag');
+    if (!svc.checkedAt) {
+      tag.textContent = '检测中';
+      tag.className = 'tag';
+    } else if (svc.running) {
+      tag.textContent = '运行中';
+      tag.className = 'tag ok';
+    } else {
+      tag.textContent = '已停止';
+      tag.className = 'tag bad';
+    }
+    $('svcPid').textContent = svc.running && svc.pid ? svc.pid : '—';
+    $('svcUptime').textContent = svc.running && svc.uptime ? svc.uptime : '—';
+    $('svcTag').title = svc.error || '';
+
+    var errBox = $('svcError');
+    if (!svc.running && svc.error) {
+      errBox.style.display = 'block';
+      errBox.textContent = /login_required|未登录/.test(svc.error)
+        ? '需要先登录：请在「终端」里扫码登录，登录后服务任务会自动启动。'
+        : svc.error;
+    } else {
+      errBox.style.display = 'none';
+      errBox.textContent = '';
+    }
+
+    var keep = $('svcKeep');
+    if (document.activeElement !== keep) keep.checked = svc.keepalive !== false;
+    $('btnSvcStart').disabled = !!svc.running;
+    $('btnSvcStop').disabled = !svc.running;
+  }
+
+  function upgradingRunning(s) {
+    var u = s.upgrade || {};
+    return !!(u.state && u.state !== 'idle' && u.state !== 'done' && u.state !== 'error');
+  }
+
+  function renderProgress(u) {
+    u = u || { state: 'idle' };
+    var wrap = $('progWrap');
+    var bar = $('progBar');
+    var text = $('progText');
+    var running = !!(u.state && u.state !== 'idle' && u.state !== 'done' && u.state !== 'error');
+    if (!u.state || u.state === 'idle') {
+      wrap.className = 'progress';
+      text.className = 'progress-text';
+      text.textContent = '';
+      return;
+    }
+    wrap.className = 'progress on' + (u.state === 'done' ? ' ok' : (u.state === 'error' ? ' err' : ''));
+    bar.style.width = Math.max(2, u.percent || 0) + '%';
+    text.className = 'progress-text' + (u.state === 'done' ? ' ok' : (u.state === 'error' ? ' err' : ''));
+    if (u.state === 'error') {
+      text.textContent = '升级失败：' + (u.error || u.message || '未知错误');
+    } else {
+      text.textContent = u.message || '';
+    }
+    if (running) startPolling();
+  }
+
+  function refresh(silent) {
+    return api('/api/status').then(function (s) {
+      render(s);
+      return s;
+    }).catch(function (err) {
+      if (!silent) setOnline(false, '服务未响应');
+      throw err;
+    });
+  }
+
+  function startPolling() {
+    if (state.pollTimer) return;
+    state.pollTimer = setInterval(function () {
+      api('/api/status').then(function (s) {
+        render(s);
+        if (!upgradingRunning(s)) {
+          stopPolling();
+          reloadTerminal();
+          if (s.upgrade && s.upgrade.state === 'done') toast(s.upgrade.message || '升级完成', 'ok');
+        }
+      }).catch(function () {});
+    }, 900);
+  }
+
+  function stopPolling() {
+    if (state.pollTimer) {
+      clearInterval(state.pollTimer);
+      state.pollTimer = 0;
+    }
+  }
+
+  /* ---------------- 运行身份 ---------------- */
+  $('permList').addEventListener('click', function (e) {
+    var b = e.target.closest ? e.target.closest('.perm') : null;
+    if (!b) return;
+    state.pendingPerm = b.dataset.perm;
+    if (state.status) render(state.status);
+  });
+
+  $('btnApplyPerm').addEventListener('click', function () {
+    var self = this;
+    var target = state.pendingPerm;
+    if (!target) return;
+    self.disabled = true;
+    api('/api/settings', { method: 'POST', body: JSON.stringify({ permission: target }), headers: { 'Content-Type': 'application/json' } })
+      .then(function () {
+        state.pendingPerm = null;
+        toast('权限档位已改为「' + PERM_LABEL[target] + '」，正在重启终端', 'ok');
+        return api('/api/restart', { method: 'POST', body: '{}', headers: { 'Content-Type': 'application/json' } });
+      })
+      .then(function () { return refresh(true); })
+      .catch(function (err) { toast('保存失败：' + err.message, 'err'); })
+      .then(function () { self.disabled = false; });
+  });
+
+  $('modeSeg').addEventListener('click', function (e) {
+    var btn = e.target.closest('button[data-mode]');
+    if (!btn) return;
+    state.pendingMode = btn.dataset.mode;
+    Array.prototype.forEach.call(this.querySelectorAll('button'), function (b) {
+      b.classList.toggle('on', b === btn);
+    });
+    $('btnApplyMode').disabled = !state.status || state.pendingMode === state.status.mode;
+  });
+
+  $('btnApplyMode').addEventListener('click', function () {
+    var mode = state.pendingMode;
+    if (!mode) return;
+    var label = mode === 'root' ? 'ROOT（超级用户）' : '普通用户';
+    if (mode === 'root' && !confirm('确认切换到 ROOT？豆包将拥有系统最高权限，可能改动系统文件。')) return;
+    this.disabled = true;
+    var self = this;
+    api('/api/settings', { method: 'POST', body: JSON.stringify({ mode: mode }) })
+      .then(function () {
+        toast('已切换到' + label + '，正在重启终端…', 'ok');
+        return api('/api/restart', { method: 'POST' });
+      })
+      .then(function () {
+        state.pendingMode = null;
+        return refresh(true);
+      })
+      .then(function () { reloadTerminal(); toast('终端已重启，新会话以' + label + '运行', 'ok'); })
+      .catch(function (err) { toast(err.message, 'err'); })
+      .then(function () { self.disabled = false; });
+  });
+
+  /* ---------------- 工作目录 ---------------- */
+  function applyWorkdir(path) {
+    if (!path) { toast('请填写工作目录', 'err'); return; }
+    if (path.charAt(0) !== '/') { toast('工作目录必须是绝对路径', 'err'); return; }
+    api('/api/settings', { method: 'POST', body: JSON.stringify({ workdir: path }) })
+      .then(function (r) {
+        toast('工作目录已设为 ' + r.workdir + '，正在重启终端…', 'ok');
+        return api('/api/restart', { method: 'POST' }).then(function () { return r; });
+      })
+      .then(function (r) {
+        $('wdInput').value = r.workdir;
+        return refresh(true);
+      })
+      .then(function () { reloadTerminal(); })
+      .catch(function (err) { toast(err.message, 'err'); });
+  }
+
+  $('btnApplyWd').addEventListener('click', function () {
+    applyWorkdir($('wdInput').value.trim());
+  });
+  $('wdInput').addEventListener('keydown', function (e) {
+    if (e.key === 'Enter') applyWorkdir(this.value.trim());
+  });
+
+  function renderChips(list) {
+    var box = $('wdChips');
+    box.innerHTML = '';
+    (list || []).forEach(function (p) {
+      var b = document.createElement('button');
+      b.className = 'chip';
+      b.textContent = p;
+      b.addEventListener('click', function () { $('wdInput').value = p; });
+      box.appendChild(b);
+    });
+  }
+
+  /* ---------------- 目录浏览 ---------------- */
+  function openSheet(title, withFooter) {
+    $('sheetTitle').textContent = title;
+    $('sheetFoot').style.display = withFooter ? 'flex' : 'none';
+    $('sheetBody').innerHTML = '';
+    $('modal').classList.add('on');
+  }
+  function closeSheet() { $('modal').classList.remove('on'); }
+
+  $('sheetClose').addEventListener('click', closeSheet);
+  $('btnPickCancel').addEventListener('click', closeSheet);
+  $('modal').addEventListener('click', function (e) { if (e.target === this) closeSheet(); });
+
+  function browse(path) {
+    openSheet('选择工作目录', true);
+    renderBrowse(path);
+  }
+
+  function renderBrowse(path) {
+    var body = $('sheetBody');
+    body.innerHTML = '<div class="empty">加载中…</div>';
+    api('/api/list?path=' + encodeURIComponent(path || '/')).then(function (d) {
+      state.browsePath = d.path;
+      body.innerHTML = '';
+
+      var crumb = document.createElement('div');
+      crumb.className = 'crumb';
+      crumb.textContent = d.path;
+      body.appendChild(crumb);
+
+      if (d.parent && d.parent !== d.path) {
+        var up = document.createElement('div');
+        up.className = 'entry';
+        up.innerHTML = '<span class="ico">↑</span><span class="name">上级目录</span>';
+        up.addEventListener('click', function () { renderBrowse(d.parent); });
+        body.appendChild(up);
+      }
+
+      if (!d.dirs.length) {
+        var empty = document.createElement('div');
+        empty.className = 'empty';
+        empty.textContent = '没有子文件夹';
+        body.appendChild(empty);
+      }
+
+      d.dirs.forEach(function (item) {
+        var row = document.createElement('div');
+        row.className = 'entry';
+        var ico = document.createElement('span');
+        ico.className = 'ico';
+        ico.textContent = '▸';
+        var name = document.createElement('span');
+        name.className = 'name';
+        name.textContent = item.name;
+        row.appendChild(ico);
+        row.appendChild(name);
+        row.addEventListener('click', function () { renderBrowse(item.path); });
+        body.appendChild(row);
+      });
+    }).catch(function (err) {
+      body.innerHTML = '';
+      var p = document.createElement('div');
+      p.className = 'empty';
+      p.textContent = '无法打开目录：' + err.message;
+      body.appendChild(p);
+    });
+  }
+
+  $('btnBrowse').addEventListener('click', function () {
+    browse($('wdInput').value.trim() || (state.status && state.status.workdir) || '/');
+  });
+  $('btnPickOk').addEventListener('click', function () {
+    var p = state.browsePath;
+    closeSheet();
+    $('wdInput').value = p;
+    applyWorkdir(p);
+  });
+
+  /* ---------------- 升级 ---------------- */
+  $('btnCheck').addEventListener('click', function () {
+    var self = this;
+    self.disabled = true;
+    self.textContent = '检查中…';
+    api('/api/upstream').then(function (r) {
+      $('vNew').textContent = r.latest;
+      $('vNew').classList.toggle('new', r.latest !== (state.status && state.status.activeVersion));
+      if (state.status && r.latest === state.status.activeVersion) toast('当前已是最新版本 ' + r.latest, 'ok');
+      else toast('发现新版本 ' + r.latest, 'ok');
+      return refresh(true);
+    }).catch(function (err) {
+      $('vNew').textContent = '检查失败';
+      toast('检查更新失败：' + err.message, 'err');
+    }).then(function () {
+      self.disabled = false;
+      self.textContent = '检查更新';
+    });
+  });
+
+  $('btnUpgrade').addEventListener('click', function () {
+    var self = this;
+    var target = $('vNew').textContent;
+    if (!confirm('确认升级到 ' + target + '？升级期间终端会短暂断开，下载约 240 MB。')) return;
+    self.disabled = true;
+    api('/api/upgrade', { method: 'POST' }).then(function () {
+      toast('已开始升级，请留意进度', 'ok');
+      startPolling();
+    }).catch(function (err) {
+      toast(err.message, 'err');
+      self.disabled = false;
+    });
+  });
+
+  /* ---------------- 后台服务任务 ---------------- */
+  function serviceAction(action, extra) {
+    var body = { action: action };
+    if (extra) for (var k in extra) body[k] = extra[k];
+    return api('/api/service', { method: 'POST', body: JSON.stringify(body) });
+  }
+
+  $('btnSvcStart').addEventListener('click', function () {
+    var self = this;
+    self.disabled = true;
+    self.textContent = '启动中…';
+    serviceAction('start').then(function (r) {
+      renderService(r.service);
+      toast('后台服务任务已启动', 'ok');
+    }).catch(function (err) {
+      toast('启动失败：' + err.message, 'err');
+    }).then(function () {
+      self.textContent = '立即启动';
+      refresh(true).catch(function () {});
+    });
+  });
+
+  $('btnSvcStop').addEventListener('click', function () {
+    if (!confirm('停止后豆包的后台服务任务会中断，正在执行的任务可能受影响。确认停止？')) return;
+    var self = this;
+    self.disabled = true;
+    self.textContent = '停止中…';
+    serviceAction('stop').then(function (r) {
+      renderService(r.service);
+      toast('后台服务任务已停止', 'ok');
+    }).catch(function (err) {
+      toast('停止失败：' + err.message, 'err');
+    }).then(function () {
+      self.textContent = '停止服务';
+      refresh(true).catch(function () {});
+    });
+  });
+
+  $('svcKeep').addEventListener('change', function () {
+    var on = this.checked;
+    serviceAction('keepalive', { enabled: on }).then(function (r) {
+      renderService(r.service);
+      toast(on ? '已开启：服务任务会一直保持运行' : '已关闭自动拉起（当前进程不受影响）', 'ok');
+    }).catch(function (err) {
+      toast(err.message, 'err');
+      refresh(true).catch(function () {});
+    });
+  });
+
+  /* ---------------- 重启与日志 ---------------- */
+  $('btnRestart').addEventListener('click', function () {
+    var self = this;
+    self.disabled = true;
+    self.textContent = '重启中…';
+    api('/api/restart', { method: 'POST' }).then(function () {
+      return refresh(true);
+    }).then(function () {
+      reloadTerminal();
+      toast('豆包已重启', 'ok');
+    }).catch(function (err) {
+      toast('重启失败：' + err.message, 'err');
+    }).then(function () {
+      self.disabled = false;
+      self.textContent = '一键重启豆包';
+    });
+  });
+
+  $('btnLog').addEventListener('click', function () {
+    openSheet('运行日志', false);
+    $('sheetBody').innerHTML = '<div class="empty">读取中…</div>';
+    api('/api/log?lines=400').then(function (r) {
+      var pre = document.createElement('pre');
+      pre.className = 'log';
+      pre.textContent = r.text || '（日志为空）';
+      $('sheetBody').innerHTML = '';
+      $('sheetBody').appendChild(pre);
+      $('sheetBody').scrollTop = $('sheetBody').scrollHeight;
+    }).catch(function (err) {
+      $('sheetBody').innerHTML = '';
+      var d = document.createElement('div');
+      d.className = 'empty';
+      d.textContent = '无法读取日志：' + err.message;
+      $('sheetBody').appendChild(d);
+    });
+  });
+
+  $('btnRefresh').addEventListener('click', function () {
+    refresh().then(function () { toast('已刷新', 'ok'); }).catch(function (err) { toast(err.message, 'err'); });
+  });
+
+  /* ---------------- 规则 ---------------- */
+  function renderRules(r) {
+    r = r || {};
+    var input = $('rulesInput');
+    if (document.activeElement !== input) input.value = r.rules || '';
+
+    var on = !!(r.rules && r.rules.trim());
+    var tag = $('rulesTag');
+    tag.textContent = on ? '已生效' : '未设置';
+    tag.className = 'tag' + (on ? ' ok' : '');
+
+    $('rulesMeta').textContent = on
+      ? '已写入 ' + (r.agentsPath || '') + (r.agentsExists ? ' · 规则区块已生成' : ' · 文件待生成')
+      : '未设置规则，模型按默认行为工作。';
+  }
+
+  function loadRules() {
+    return api('/api/rules').then(renderRules);
+  }
+
+  $('btnRulesSave').addEventListener('click', function () {
+    var self = this;
+    var text = $('rulesInput').value;
+    if (!text.trim() && !confirm('内容为空，保存会移除现有规则。继续？')) return;
+    self.disabled = true;
+    self.textContent = '保存中…';
+    api('/api/rules', { method: 'POST', body: JSON.stringify({ rules: text }), headers: { 'Content-Type': 'application/json' } })
+      .then(function (r) { renderRules(r); toast('规则已保存并立即生效', 'ok'); })
+      .catch(function (err) { toast('保存失败：' + err.message, 'err'); })
+      .then(function () { self.disabled = false; self.textContent = '保存规则'; });
+  });
+
+  $('btnRulesClear').addEventListener('click', function () {
+    if (!confirm('清空规则并从 AGENTS.md 移除规则区块？')) return;
+    api('/api/rules', { method: 'POST', body: JSON.stringify({ rules: '' }), headers: { 'Content-Type': 'application/json' } })
+      .then(function (r) { $('rulesInput').value = ''; renderRules(r); toast('规则已清空', 'ok'); })
+      .catch(function (err) { toast('清空失败：' + err.message, 'err'); });
+  });
+
+  /* ---------------- 启动 ---------------- */
+  /* ---------------- 积分 / 签到 ---------------- */
+  function fmtTime(v) {
+    if (v === null || v === undefined || v === '') return '—';
+    let n = v;
+    if (typeof n === 'string' && /^\d+$/.test(n)) n = Number(n);
+    if (typeof n === 'number') {
+      if (n > 1e12) return new Date(n).toLocaleString('zh-CN');
+      if (n > 1e9) return new Date(n * 1000).toLocaleString('zh-CN');
+      return String(n);
+    }
+    return String(v);
+  }
+
+  function renderCredit(d) {
+    d = d || {};
+    var bal = d.balance;
+    $('creditBalance').textContent = bal === null || bal === undefined ? '—' : bal;
+    var tag = $('creditTag');
+    var hasData = bal !== null && bal !== undefined;
+    var zero = hasData && Number(bal) === 0;
+    tag.textContent = hasData ? (zero ? '已用尽' : '有额度') : (d.hasSession ? '无数据' : '未接会话');
+    tag.className = 'tag' + (hasData && !zero ? ' ok' : '');
+
+    var sub = d.subscription;
+    var note = d.note || '';
+    if (!note) {
+      note = (sub && sub.product ? ('当前方案：' + sub.product + (sub.name ? '（' + sub.name + '）' : '') + '；') : '') +
+        (d.hasSession ? '会话保存于 ' + (d.sessionSavedAt || '未知时间') : '');
+    }
+    $('creditNote').textContent = note;
+
+    var buckets = d.buckets || [];
+    var soon = buckets.filter(function (b) { return b.remaining > 0 && b.expireAt; })[0];
+    $('creditSoon').textContent = soon ? ('最近到期：' + soon.expireText) : (buckets.length ? '无可用额度' : '');
+
+    var si = d.signin || {};
+    $('creditSignin').textContent = si.signed
+      ? ('今日已签到' + (si.rewardToday ? ' +' + si.rewardToday : ''))
+      : (si.available ? '今日未签到' : '签到不可用：未保存 PC 端 Cookie');
+    if (si.note && !note.includes(si.note)) note = (note ? note + ' ' : '') + si.note;
+    $('creditNote').textContent = note;
+
+    var box = $('creditExpiry');
+    if (!buckets.length) { box.innerHTML = ''; return; }
+    var head = '<table><thead><tr><th>来源</th><th>额度</th><th>已用</th><th>剩余</th><th>到期时间</th></tr></thead><tbody>';
+    var body = buckets.map(function (b) {
+      var rest = b.remaining === null ? '—' : b.remaining;
+      var cls = b.remaining === 0 ? ' style="color:var(--sub)"' : '';
+      return '<tr' + cls + '><td>' + (b.name || b.group || '') + '</td><td>' + (b.total === null ? '—' : b.total) + '</td><td>' +
+        (b.used === null ? '—' : b.used) + '</td><td><b>' + rest + '</b></td><td>' + (b.expireText || '—') + '</td></tr>';
+    }).join('');
+    box.innerHTML = head + body + '</tbody></table>';
+  }
+
+  function loadCredit() {
+    return api('/api/credit').then(renderCredit);
+  }
+
+  $('btnCreditRefresh').addEventListener('click', function () {
+    var self = this;
+    self.disabled = true;
+    loadCredit().catch(function (err) { toast('读取积分失败：' + err.message, 'err'); }).then(function () { self.disabled = false; });
+  });
+
+  $('btnCreditSign').addEventListener('click', function () {
+    var self = this;
+    self.disabled = true;
+    self.textContent = '签到中…';
+    api('/api/credit/signin', { method: 'POST', body: '{}', headers: { 'Content-Type': 'application/json' } })
+      .then(function (r) {
+        if (r.ok) {
+          var extra = '连续 ' + (r.continuousDays === null || r.continuousDays === undefined ? '?' : r.continuousDays) + ' 天';
+          if (r.rewardAmount) extra += '，+' + r.rewardAmount + ' 额度';
+          toast('签到成功（' + (r.date || '') + '，' + extra + '）', 'ok');
+          if (r.snapshot) renderCredit(r.snapshot);
+          return loadCredit();
+        }
+        if (r.snapshot) renderCredit(r.snapshot);
+        var detail = (r.attempts || []).map(function (a) { return a.path + ':' + a.status; }).join(' ');
+        $('creditNote').textContent = (r.reason || '签到失败') + (detail ? ('（已尝试 ' + detail + '）') : '');
+        toast('签到未成功', 'err');
+      })
+      .catch(function (err) { toast('签到失败：' + err.message, 'err'); })
+      .then(function () { self.disabled = false; self.textContent = '签到'; });
+  });
+
+  function loadPcSession() {
+    return api('/api/credit/pc-session').then(function (r) {
+      $('pcState').textContent = r.has ? ('已保存 · ' + (r.savedAt || '未知时间').slice(0, 19).replace('T', ' ')) : '未保存';
+    }).catch(function () { $('pcState').textContent = '读取失败'; });
+  }
+
+  $('btnSavePc').addEventListener('click', function () {
+    var self = this;
+    var cookie = ($('pcCookie').value || '').trim();
+    if (!cookie) { toast('先粘贴 Cookie', 'err'); return; }
+    self.disabled = true;
+    api('/api/credit/pc-session', {
+      method: 'POST',
+      body: JSON.stringify({ cookie: cookie }),
+      headers: { 'Content-Type': 'application/json' },
+    })
+      .then(function (r) {
+        var c = r.check || {};
+        if (c.ok) {
+          toast('Cookie 已保存并校验通过', 'ok');
+          $('pcState').textContent = '已保存 · 校验通过';
+          $('pcCookie').value = '';
+          loadCredit().catch(function () {});
+        } else {
+          toast('Cookie 已保存，但校验未通过：' + (c.msg || ('code=' + c.code)), 'err');
+          $('pcState').textContent = '已保存 · 校验未通过';
+        }
+      })
+      .catch(function (err) { toast('保存失败：' + err.message, 'err'); })
+      .then(function () { self.disabled = false; });
+  });
+
+  $('btnClearPc').addEventListener('click', function () {
+    api('/api/credit/pc-session', { method: 'DELETE' })
+      .then(function () { toast('已清除 PC 端 Cookie', 'ok'); loadPcSession(); loadCredit().catch(function () {}); })
+      .catch(function (err) { toast('清除失败：' + err.message, 'err'); });
+  });
+
+  /* ---------------- 启动 ---------------- */
+  Array.prototype.forEach.call(document.querySelectorAll('.tab'), function (b) {
+    b.addEventListener('click', function () { switchTab(b.dataset.tab); });
+  });
+
+  api('/api/status').then(function (s) {
+    render(s);
+    renderChips(s.chips || []);
+    loadRules().catch(function () {});
+    loadCredit().catch(function () {});
+    loadPcSession().catch(function () {});
+    loadTerminal();
+    if (upgradingRunning(s)) startPolling();
+    setInterval(function () {
+      if (state.pollTimer) return;
+      refresh(true).catch(function () { setOnline(false, '服务未响应'); });
+    }, 10000);
+  }).catch(function () {
+    setOnline(false, '管理服务未响应');
+    loadTerminal();
+  });
+})();
+</script>
+</body>
+</html>

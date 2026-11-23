@@ -1,0 +1,17 @@
+{
+    ".url": {
+        "doubao.Application": {
+            "title": "逗包 CLI",
+            "icon": "images/icon_{0}.png",
+            "type": "iframe",
+            "protocol": "",
+            "url": "/app/doubao/",
+            "gatewaySocket": "doubao.sock",
+            "gatewayPrefix": "/app/doubao",
+            "allUsers": false,
+            "control": {
+                "accessPerm": "readonly"
+            }
+        }
+    }
+}
